@@ -8,8 +8,8 @@
 // @icon         https://www.google.com/s2/favicons?domain=youtube.com
 // @grant        none
 // @run-at       document-idle
-// @downloadURL  
-// @updateURL    
+// @downloadURL  https://github.com/sam-siddiqui/jerryscripts/raw/refs/heads/master/MDWalkingEnforcer.user.js
+// @updateURL    https://github.com/sam-siddiqui/jerryscripts/raw/refs/heads/master/MDWalkingEnforcer.user.js
 // ==/UserScript==
 
 (function() {

@@ -35,6 +35,9 @@
     let checkTimerId = null; // To store the setTimeout ID for stopping/starting
     let punishmentType = 'linear';
 
+    // Training the Enforcer via Google Sheets
+    let sheetsAppURL = "https://script.google.com/macros/s/AKfycbyhnzn6Od_9l60oq3xKIcJt6Vp53b6gtXjzicQMxtGdH6SLhTxxY4czTrqm3FnodNUF/exec"
+
     // =================================================================
     // 🎶 ORIGINAL LOOPER LOGIC AND UI 🎶
     // =================================================================
@@ -205,6 +208,23 @@
             logFunction(`[ENFORCER] Cadence OK: ${cadence.toFixed(1)} SPM. Maintaining 1.0x speed.`);
         }
     }
+        
+    function reportCadenceToSheets(cadence) {
+        const logData = {
+            cadence: cadence.toFixed(1),
+            magnitude: lastMagnitude.toFixed(2),
+            target_spm: TARGET_SPM
+        };
+
+        fetch(`${sheetsAppURL}?${new URLSearchParams(logData)}`, {
+            method: 'GET', // Using GET is simpler for the Apps Script endpoint
+            mode: 'no-cors' // Crucial for mobile browser requests
+        }).catch(error => logFunction("Sheet Logger failed:", error));
+    }
+
+    function fetchTodaysSPM() {
+
+    }
 
     // =================================================================
     // 👟 WALKING ENFORCER CORE FUNCTIONS 👟
@@ -250,6 +270,8 @@
 
         if (punishmentType == 'linear') linearPunishment(cadence);
         if (punishmentType == 'proportional') proportionalPunishment(cadence);
+
+        reportCadenceToSheets(cadence);
 
         // Reset and schedule the next check
         stepCount = 0;

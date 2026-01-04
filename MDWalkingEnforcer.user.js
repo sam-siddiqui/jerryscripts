@@ -33,6 +33,7 @@
     let timeOfLastCheck = Date.now();
     let isEnforcerActive = false;
     let checkTimerId = null; // To store the setTimeout ID for stopping/starting
+    let punishmentType = 'linear';
 
     // =================================================================
     // 🎶 ORIGINAL LOOPER LOGIC AND UI 🎶
@@ -165,6 +166,45 @@
     loopStateObserver();
     searchStateObserver();
 
+    // =================================================================
+    // 📖 ENFORCER Learning Functions 📖
+    // =================================================================
+
+    function linearPunishment(cadence) {
+        if (cadence < TARGET_SPM) {
+            // ENFORCEMENT: SLOW DOWN
+            let currPlaybackRate = document.querySelector(HTML5PlayerSelector).playbackRate;
+            document.querySelector(HTML5PlayerSelector).playbackRate = Number((SLOWDOWN_RATE * currPlaybackRate).toFixed(2));
+            logFunction(`[ENFORCER] Cadence LOW: ${cadence.toFixed(1)} SPM. Slowing ${SLOWDOWN_RATE}x.`);
+        } else {
+            // REWARD: NORMAL SPEED
+            document.querySelector(HTML5PlayerSelector).playbackRate = 1.0;
+            logFunction(`[ENFORCER] Cadence OK: ${cadence.toFixed(1)} SPM. Maintaining 1.0x speed.`);
+        }
+    }
+
+    function proportionalPunishment(cadence) {
+        const CADENCE_DIFF = TARGET_SPM - cadence;
+
+        if (CADENCE_DIFF > 0) { // Cadence is too low
+            let currPlaybackRate = document.querySelector(HTML5PlayerSelector).playbackRate;
+            // Max penalty factor (e.g., 0.1) * proportional difference
+            // If you are 20 steps low, penalize harder than if you are 2 steps low.
+            const PENALTY_FACTOR = Math.min(0.2, CADENCE_DIFF / TARGET_SPM * 1.5); // Example scaling
+
+            // Gradual slowdown: currRate * (1 - PENALTY_FACTOR)
+            document.querySelector(HTML5PlayerSelector).playbackRate = Number((currPlaybackRate * (1 - PENALTY_FACTOR)).toFixed(2));
+
+            // Ensure it doesn't slow below a certain minimum (e.g., 0.1x)
+            if (document.querySelector(HTML5PlayerSelector).playbackRate < 0.1) document.querySelector(HTML5PlayerSelector).playbackRate = 0.1;
+
+            logFunction(`[ENFORCER] Cadence LOW: ${cadence.toFixed(1)} SPM. Slowing ${PENALTY_FACTOR}x.`);
+        } else {
+            // REWARD: NORMAL SPEED
+            document.querySelector(HTML5PlayerSelector).playbackRate = 1.0;
+            logFunction(`[ENFORCER] Cadence OK: ${cadence.toFixed(1)} SPM. Maintaining 1.0x speed.`);
+        }
+    }
 
     // =================================================================
     // 👟 WALKING ENFORCER CORE FUNCTIONS 👟
@@ -208,16 +248,8 @@
         // Steps Per Minute Calculation
         const cadence = (stepCount / (timeElapsedMs / 60000));
 
-        if (cadence < TARGET_SPM) {
-            // ENFORCEMENT: SLOW DOWN
-            let currPlaybackRate = document.querySelector(HTML5PlayerSelector).playbackRate;
-            document.querySelector(HTML5PlayerSelector).playbackRate = Number((SLOWDOWN_RATE * currPlaybackRate).toFixed(2));
-            logFunction(`[ENFORCER] Cadence LOW: ${cadence.toFixed(1)} SPM. Slowing ${SLOWDOWN_RATE}x.`);
-        } else {
-            // REWARD: NORMAL SPEED
-            document.querySelector(HTML5PlayerSelector).playbackRate = 1.0;
-            logFunction(`[ENFORCER] Cadence OK: ${cadence.toFixed(1)} SPM. Maintaining 1.0x speed.`);
-        }
+        if (punishmentType == 'linear') linearPunishment(cadence);
+        if (punishmentType == 'proportional') proportionalPunishment(cadence);
 
         // Reset and schedule the next check
         stepCount = 0;
@@ -237,7 +269,7 @@
 
         // Start listening to the accelerometer
         if (window.DeviceMotionEvent) {
-             window.addEventListener('devicemotion', handleMotion, true);
+            window.addEventListener('devicemotion', handleMotion, true);
         }
 
         // Start the randomized checking cycle
@@ -258,7 +290,7 @@
 
         // Remove the motion listener to save battery (optional but good practice)
         if (window.DeviceMotionEvent) {
-             window.removeEventListener('devicemotion', handleMotion, true);
+            window.removeEventListener('devicemotion', handleMotion, true);
         }
     }
 

@@ -12,7 +12,7 @@
 // @updateURL    
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
     // =================================================================
@@ -35,7 +35,7 @@
     let checkTimerId = null; // To store the setTimeout ID for stopping/starting
 
     // =================================================================
-    // 🎶 YOUR ORIGINAL LOOPER LOGIC AND UI 🎶
+    // 🎶 ORIGINAL LOOPER LOGIC AND UI 🎶
     // =================================================================
 
     // Append CSS
@@ -55,7 +55,7 @@
 
     // Declare variables and create elements
     let loopButtonIcon = "<span>▶︎</span>"; let loopButtonText = "Single ";
-    let unLoopButtonIcon = "<span style='color:red'> ∞ </span>"; let unLoopButtonText = "Looping ";
+    let unLoopButtonIcon = "<span style='color:red'> ⟳ </span>"; let unLoopButtonText = "Looping ";
     const HTML5PlayerSelector = '.html5-main-video';
 
     function createButton(type) {
@@ -76,7 +76,7 @@
 
     // Detect if entry point is NOT m.youtube.com/watch
     function hideButtonsIfNotYouTube() {
-        if(window.location.href.split('/')[3].substring(0, 5) !== "watch"){
+        if (window.location.href.split('/')[3].substring(0, 5) !== "watch") {
             hideElement(unLoopBtn);
             hideElement(loopBtn);
         }
@@ -118,11 +118,11 @@
     let loopStateObserver = () => {
         const targetNode = document.querySelector('#player');
         const config = { attributes: true, childList: true, subtree: true };
-        const callback = function(mutationsList, observer) {
-            for(const mutation of mutationsList) {
+        const callback = function (mutationsList, observer) {
+            for (const mutation of mutationsList) {
                 if (mutation.type === 'attributes' && mutation.attributeName === "src") {
                     console.log('video source changed; checking if url changed');
-                    if(url!==location.href){
+                    if (url !== location.href) {
                         document.querySelector(HTML5PlayerSelector).loop = false;
                         hideElement(unLoopBtn);
                         showElement(loopBtn);
@@ -142,14 +142,14 @@
     let searchStateObserver = () => {
         const targetNode = document.querySelector('ytm-mobile-topbar-renderer');
         const config = { attributes: true, childList: true, subtree: true };
-        const callback = function(mutationsList, observer) {
-            for(const mutation of mutationsList) {
-                if(mutation.attributeName == "data-mode"){
-                    if(document.querySelector('.mobile-topbar-header').dataset.mode === "searching"){
+        const callback = function (mutationsList, observer) {
+            for (const mutation of mutationsList) {
+                if (mutation.attributeName == "data-mode") {
+                    if (document.querySelector('.mobile-topbar-header').dataset.mode === "searching") {
                         console.log('search mode open');
                         unLoopBtn.style.zIndex = 2;
                         loopBtn.style.zIndex = 2;
-                    } else{
+                    } else {
                         console.log('search mode close');
                         unLoopBtn.style.zIndex = 5;
                         loopBtn.style.zIndex = 5;
@@ -175,12 +175,11 @@
         if (!isEnforcerActive) return; // Only process motion data when needed
 
         const { x, y, z } = event.accelerationIncludingGravity;
-        const currentMagnitude = Math.sqrt(x*x + y*y + z*z);
+        const currentMagnitude = Math.sqrt(x * x + y * y + z * z);
 
         if (currentMagnitude > lastMagnitude &&
             currentMagnitude > ACCEL_THRESHOLD &&
-            (Date.now() - lastPeakTime > PEAK_TIMEOUT_MS))
-        {
+            (Date.now() - lastPeakTime > PEAK_TIMEOUT_MS)) {
             stepCount++;
             lastPeakTime = Date.now();
         }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LLM Conversation Exporter
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.2.1
 // @description  Extracts the conversation using a failsafe text-search anchor.
 // @author       SS, Gemini
 // @match        https://gemini.google.com/*
@@ -9,7 +9,8 @@
 // @match        https://chatgpt.com/*
 // @downloadURL  https://raw.githubusercontent.com/sam-siddiqui/jerryscripts/refs/heads/master/LLMConversationExporter.user.js
 // @updateURL    https://raw.githubusercontent.com/sam-siddiqui/jerryscripts/refs/heads/master/LLMConversationExporter.user.js
-// @grant        none
+// @grant        GM_setValue
+// @grant        GM_getValue
 // ==/UserScript==
 
 (function () {
@@ -44,6 +45,11 @@ Answer concisely and accurately.
   // Internal State
   const ogSend = XMLHttpRequest.prototype.send;
   let shouldInject = true;
+  const STORAGE_KEY_SYSTEM = 'gemini_custom_system';
+  const instructions_input_id = 'ctx-system-input';
+  const context_input_id = 'ctx-memory-input';
+  const counter_input_id = 'ctx-usage-counter';
+  const STORAGE_KEY_CONTEXT = 'gemini_custom_context';
 
   // --- [VALIDATION] ---
   const totalInstructionSize = systemInstructions.length + dynamicContext.length;
@@ -52,6 +58,186 @@ Answer concisely and accurately.
     shouldInject = false;
   } else {
     console.log(`[ContextInjector] Config Valid. Instructions size: ${totalInstructionSize} chars.`);
+  }
+
+  function createConfigurationModal(instructions_id, context_id, counter_id) {
+    const container = document.createElement('div');
+
+    // 1. Header
+    const header = document.createElement('h2');
+    header.textContent = 'Gemini Context Configuration';
+    Object.assign(header.style, { margin: '0 0 10px 0', fontSize: '1.5rem' });
+    container.appendChild(header);
+
+    // 2. Static Instructions Section
+    const staticDiv = document.createElement('div');
+    const staticLabel = document.createElement('label');
+    staticLabel.textContent = 'Static Instructions (Persona)';
+    Object.assign(staticLabel.style, { display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#8ab4f8' });
+
+    const staticTextarea = document.createElement('textarea');
+    staticTextarea.id = instructions_id;
+    staticTextarea.rows = 5;
+    Object.assign(staticTextarea.style, {
+      width: '100%', background: '#2b2d30', color: '#fff', border: '1px solid #444746',
+      borderRadius: '6px', padding: '10px', resize: 'vertical', fontFamily: 'monospace'
+    });
+
+    staticDiv.append(staticLabel, staticTextarea);
+    container.appendChild(staticDiv);
+
+    // 3. Dynamic Context Section
+    const dynamicDiv = document.createElement('div');
+    const dynamicLabel = document.createElement('label');
+    dynamicLabel.textContent = 'Dynamic Context (Memory)';
+    Object.assign(dynamicLabel.style, { display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#8ab4f8' });
+
+    const dynamicTextarea = document.createElement('textarea');
+    dynamicTextarea.id = context_id;
+    dynamicTextarea.rows = 5;
+    Object.assign(dynamicTextarea.style, {
+      width: '100%', background: '#2b2d30', color: '#fff', border: '1px solid #444746',
+      borderRadius: '6px', padding: '10px', resize: 'vertical', fontFamily: 'monospace'
+    });
+
+    dynamicDiv.append(dynamicLabel, dynamicTextarea);
+    container.appendChild(dynamicDiv);
+
+    // 4. Counter Info
+    const counterDiv = document.createElement('div');
+    counterDiv.textContent = 'Context Usage: ';
+    Object.assign(counterDiv.style, { fontSize: '0.85rem', color: '#c4c7c5' });
+
+    const counterSpan = document.createElement('span');
+    counterSpan.id = counter_id;
+    counterSpan.textContent = '0';
+    counterDiv.append(counterSpan, ' / 4000 chars (approx safe limit)');
+    container.appendChild(counterDiv);
+
+    // 5. Button Row
+    const btnRow = document.createElement('div');
+    Object.assign(btnRow.style, { display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' });
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.id = 'ctx-cancel-btn';
+    cancelBtn.textContent = 'Cancel';
+    Object.assign(cancelBtn.style, { padding: '8px 16px', borderRadius: '18px', border: 'none', background: 'transparent', color: '#e3e3e3', cursor: 'pointer' });
+
+    const saveBtn = document.createElement('button');
+    saveBtn.id = 'ctx-save-btn';
+    saveBtn.textContent = 'Save & Close';
+    Object.assign(saveBtn.style, { padding: '8px 16px', borderRadius: '18px', border: 'none', background: '#8ab4f8', color: '#000', fontWeight: 'bold', cursor: 'pointer' });
+
+    btnRow.append(cancelBtn, saveBtn);
+    container.appendChild(btnRow);
+
+    return container;
+  }
+
+  function toggleModal() {
+    const modal = document.getElementById('gemini-ctx-modal');
+    const isHidden = modal.style.display === 'none';
+    if (isHidden) {
+      // Load current values from Storage before showing
+      document.getElementById('ctx-system-input').value = localStorage.getItem(STORAGE_KEY_SYSTEM) || SYSTEM_INSTRUCTIONS;
+      document.getElementById('ctx-memory-input').value = localStorage.getItem(STORAGE_KEY_CONTEXT) || DYNAMIC_CONTEXT;
+      // Trigger input event to update counter
+      document.getElementById('ctx-system-input').dispatchEvent(new Event('input'));
+
+      modal.style.display = 'block';
+    } else {
+      modal.style.display = 'none';
+    }
+  }
+
+  function createUI() {
+    // 1. Floating Trigger Button
+    const btn = document.createElement('button');
+    btn.innerText = "⚙️";
+    btn.type = "button"
+    btn.title = "Configure Gemini Context";
+    Object.assign(btn.style, {
+      position: 'fixed',
+      top: '15px',
+      right: '80px', // Left of the user profile usually
+      zIndex: '9999',
+      backgroundColor: '#1e1f20', // Gemini Dark Gray
+      color: '#e3e3e3',
+      border: '1px solid #444746',
+      borderRadius: '50%',
+      width: '40px',
+      height: '40px',
+      cursor: 'pointer',
+      fontSize: '20px',
+      boxShadow: '0 2px 5px rgba(0,0,0,0.3)'
+    });
+
+    btn.onmouseover = () => { btn.style.backgroundColor = '#333537'; }
+    btn.onmouseout = () => { btn.style.backgroundColor = '#1e1f20'; }
+    btn.onclick = () => { toggleModal() };
+
+    document.body.appendChild(btn);
+
+    // 2. The Modal Overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'gemini-ctx-modal';
+    Object.assign(overlay.style, {
+      display: 'none',
+      position: 'fixed',
+      top: '0', left: '0', width: '100%', height: '100%',
+      backgroundColor: 'rgba(0,0,0,0.6)',
+      zIndex: '10000',
+      justifyContent: 'center',
+      alignItems: 'center',
+      fontFamily: 'Google Sans, Roboto, sans-serif'
+    });
+
+    // 3. The Modal Content
+    const modal = createConfigurationModal(instructions_input_id, context_input_id, counter_input_id);
+    Object.assign(modal.style, {
+      backgroundColor: '#1e1f20',
+      color: '#e3e3e3',
+      padding: '25px',
+      borderRadius: '12px',
+      width: '600px',
+      maxWidth: '90%',
+      boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '15px'
+    });
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    // --- Event Listeners ---
+    document.getElementById('ctx-cancel-btn').onclick = toggleModal;
+    document.getElementById('ctx-save-btn').onclick = saveSettings;
+
+    // Live Character Count
+    const sysInput = document.getElementById(instructions_input_id);
+    const memInput = document.getElementById(context_input_id);
+    const counter = document.getElementById(counter_input_id);
+
+    function updateCount() {
+      const total = (sysInput.value || "").length + (memInput.value || "").length;
+      counter.innerText = total;
+      counter.style.color = total > 4000 ? '#ff8bcb' : '#c4c7c5';
+    }
+
+    sysInput.oninput = updateCount;
+    memInput.oninput = updateCount;
+  }
+
+  function saveSettings() {
+    const sysVal = document.getElementById(instructions_input_id).value;
+    const memVal = document.getElementById(context_input_id).value;
+
+    localStorage.setItem(STORAGE_KEY_SYSTEM, sysVal);
+    localStorage.setItem(STORAGE_KEY_CONTEXT, memVal);
+
+    toggleModal();
+    console.log("[ContextManager] Settings Saved.");
   }
 
   // --- [THE INTERCEPTOR] ---
@@ -86,7 +272,9 @@ Answer concisely and accurately.
           if (!originalUserMsg.includes(InstructionsPrefix)) {
 
             // Combine Components
-            let injectionPayload = `${systemInstructions}\n${dynamicContext}\n\n${UserMessagePrefix}\n`;
+            let currInstructions = InstructionsPrefix + ( localStorage.getItem(STORAGE_KEY_SYSTEM) || SYSTEM_INSTRUCTIONS ) + Suffix;
+            let currContext = ContextPrefix + ( localStorage.getItem(STORAGE_KEY_CONTEXT) || DYNAMIC_CONTEXT ) + Suffix;
+            let injectionPayload = `${currInstructions}\n${currContext}\n\n${UserMessagePrefix}\n`;
             let combinedLength = injectionPayload.length + originalUserMsg.length;
 
             // --- STEP 4: SAFETY CHECK & TRUNCATION ---
@@ -606,6 +794,8 @@ Answer concisely and accurately.
       if (!addedButtonContainer) {
         document.body.appendChild(buttonsContainer);
         addedButtonContainer = true;
+        // Initialize UI on load
+        createUI();
       }
 
       // Try to set up conversation observer

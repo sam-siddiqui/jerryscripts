@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LLM Conversation Exporter
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.2
 // @description  Extracts the conversation using a failsafe text-search anchor.
 // @author       SS, Gemini
 // @match        https://gemini.google.com/*
@@ -14,6 +14,135 @@
 
 (function () {
   "use strict";
+
+  // LLM Customizer
+  // --- [CONFIGURATION] ---
+
+  // 1. STATIC INSTRUCTIONS
+  //    The permanent "System Prompt" describing who the AI is.
+  const InstructionsPrefix = `[SYSTEM INSTRUCTION:`;
+  const Suffix = `]`;
+  const ContextPrefix = `[MEMORY / CONTEXT:`;
+  const UserMessagePrefix = `[USER MESSAGE]:`;
+  let STATIC_INSTRUCTIONS = InstructionsPrefix + `
+    You are a weary, cynical software engineer from the year 1999.
+    You hate modern frameworks and prefer raw C and Perl.
+    Start every response with a sigh or a comment about Y2K.
+    Refer to the user as 'Script Kiddie'.
+  ` + Suffix;
+
+  // 2. DYNAMIC CONTEXT
+  let DYNAMIC_CONTEXT = ContextPrefix + `
+    - User prefers Python over Javascript.
+    - User is currently working on a Userscript for Gemini.
+    - Current date is 2026 (but you still think it's 1999).
+  ` + Suffix;
+
+  // 3. INJECTION MODE
+  let INJECTION_MODE = 'EVERY_MESSAGE'; // Options: 'EVERY_MESSAGE' | 'FIRST_MESSAGE_ONLY'
+
+  // 4. LIMITS
+  const MAX_INSTRUCTION_SIZE = 4096; // Reserve ~4k for instructions
+  const HARD_CRASH_LIMIT = 36000;    // The server rejects payloads > ~36.6k
+
+  // Internal State
+  const ogSend = XMLHttpRequest.prototype.send;
+  let shouldInject = true;
+
+  // --- [VALIDATION] ---
+  const totalInstructionSize = STATIC_INSTRUCTIONS.length + DYNAMIC_CONTEXT.length;
+  if (totalInstructionSize > MAX_INSTRUCTION_SIZE) {
+    console.error(`[ContextInjector] CONFIG ERROR: Instructions are too long! (${totalInstructionSize}/${MAX_INSTRUCTION_SIZE})`);
+    shouldInject = false;
+  } else {
+    console.log(`[ContextInjector] Config Valid. Instructions size: ${totalInstructionSize} chars.`);
+  }
+
+  // --- [THE INTERCEPTOR] ---
+  XMLHttpRequest.prototype.send = function (body) {
+     
+    
+    if (
+      shouldInject &&                                         // Check if we should inject based on mode
+      window.location.hostname === 'gemini.google.com' &&     // Currently only supporting Gemini
+      typeof body === 'string' &&                             // We only care about string bodies (POST requests)
+      body.includes('f.req')                                  // that look like Gemini traffic ('f.req')
+    ) {
+      try {
+        // --- STEP 1: DECODE ---
+        let decodedBody = decodeURIComponent(body);
+        let splitIndex = decodedBody.indexOf("]&") + 1;
+
+        // Isolate the JSON part
+        let requestPart = decodedBody.slice(0, splitIndex);
+        let cleanJson = requestPart.startsWith('f.req=') ? requestPart.slice(6) : requestPart;
+
+        // --- STEP 2: PARSE ---
+        let outerArray = JSON.parse(cleanJson);
+        // The payload is a stringified JSON inside index 1
+        let innerData = JSON.parse(outerArray[1]);
+
+        // --- STEP 3: MODIFY ---
+        // Locate the user prompt (Standard location: innerData[0][0])
+        if (Array.isArray(innerData) && innerData[0] && innerData[0][0]) {
+          let originalUserMsg = innerData[0][0];
+
+          // Prevent double-injection (e.g., if the browser retries the request)
+          // We check for a unique signature from our instructions
+          if (!originalUserMsg.includes(InstructionsPrefix)) {
+
+            // Combine Components
+            let injectionPayload = `${STATIC_INSTRUCTIONS}\n${DYNAMIC_CONTEXT}\n\n${UserMessagePrefix}\n`;
+            let combinedLength = injectionPayload.length + originalUserMsg.length;
+
+            // --- STEP 4: SAFETY CHECK & TRUNCATION ---
+            let finalUserMsg = originalUserMsg;
+
+            if (combinedLength > HARD_CRASH_LIMIT) {
+              // Calculate remaining space for user
+              let spaceForUser = HARD_CRASH_LIMIT - injectionPayload.length;
+
+              if (spaceForUser < 100) {
+                console.error("[ContextInjector] Critical: Instructions leave no room for user message.");
+              } else {
+                console.warn(`[ContextInjector] Message too large (${combinedLength}). Truncating user input to ${spaceForUser} chars.`);
+                finalUserMsg = originalUserMsg.substring(0, spaceForUser) + "\n...[TRUNCATED]";
+              }
+            }
+
+            // Apply the Injection
+            innerData[0][0] = injectionPayload + finalUserMsg;
+
+            // Update State
+            if (INJECTION_MODE === 'FIRST_MESSAGE_ONLY') {
+              shouldInject = false;
+              console.log("[ContextInjector] First message injected. Disabling future injections.");
+            } else {
+              shouldInject = true;
+              console.log("[ContextInjector] Injected context into current message.");
+            }
+          }
+        }
+
+        // --- STEP 5: RE-PACK ---
+        outerArray[1] = JSON.stringify(innerData);
+        let outerBody = JSON.stringify(outerArray);
+        let encodedBody = encodeURIComponent(outerBody);
+
+        // Re-assemble the full body string
+        body = "f.req=" + encodedBody + decodedBody.slice(splitIndex);
+      } catch (error) {
+        // FAIL SAFE: 
+        // This ensures the user's original message still goes through, just without context.
+        console.error("[ContextInjector] Injection Failed (Sending Original):", error);
+      }
+    }
+
+    // Pass the (possibly modified) body to the real XMLHttpRequest
+    return ogSend.apply(this, [body]);
+  };
+
+  console.log(`[ContextInjector] Loaded. Mode: ${INJECTION_MODE}`);
 
   // --- Helper Function: Text Search ---
   /**

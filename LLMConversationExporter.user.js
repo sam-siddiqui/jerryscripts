@@ -24,19 +24,15 @@
   const Suffix = `]`;
   const ContextPrefix = `[MEMORY / CONTEXT:`;
   const UserMessagePrefix = `[USER MESSAGE]:`;
-  let STATIC_INSTRUCTIONS = InstructionsPrefix + `
-    You are a weary, cynical software engineer from the year 1999.
-    You hate modern frameworks and prefer raw C and Perl.
-    Start every response with a sigh or a comment about Y2K.
-    Refer to the user as 'Script Kiddie'.
-  ` + Suffix;
+  let SYSTEM_INSTRUCTIONS = `You are a helpful AI assistant.
+Answer concisely and accurately.
+  `;
 
   // 2. DYNAMIC CONTEXT
-  let DYNAMIC_CONTEXT = ContextPrefix + `
-    - User prefers Python over Javascript.
-    - User is currently working on a Userscript for Gemini.
-    - Current date is 2026 (but you still think it's 1999).
-  ` + Suffix;
+  let DYNAMIC_CONTEXT = ``;
+
+  let systemInstructions = InstructionsPrefix + SYSTEM_INSTRUCTIONS + Suffix;
+  let dynamicContext = ContextPrefix + DYNAMIC_CONTEXT + Suffix;
 
   // 3. INJECTION MODE
   let INJECTION_MODE = 'EVERY_MESSAGE'; // Options: 'EVERY_MESSAGE' | 'FIRST_MESSAGE_ONLY'
@@ -50,7 +46,7 @@
   let shouldInject = true;
 
   // --- [VALIDATION] ---
-  const totalInstructionSize = STATIC_INSTRUCTIONS.length + DYNAMIC_CONTEXT.length;
+  const totalInstructionSize = systemInstructions.length + dynamicContext.length;
   if (totalInstructionSize > MAX_INSTRUCTION_SIZE) {
     console.error(`[ContextInjector] CONFIG ERROR: Instructions are too long! (${totalInstructionSize}/${MAX_INSTRUCTION_SIZE})`);
     shouldInject = false;
@@ -60,8 +56,6 @@
 
   // --- [THE INTERCEPTOR] ---
   XMLHttpRequest.prototype.send = function (body) {
-     
-    
     if (
       shouldInject &&                                         // Check if we should inject based on mode
       window.location.hostname === 'gemini.google.com' &&     // Currently only supporting Gemini
@@ -92,7 +86,7 @@
           if (!originalUserMsg.includes(InstructionsPrefix)) {
 
             // Combine Components
-            let injectionPayload = `${STATIC_INSTRUCTIONS}\n${DYNAMIC_CONTEXT}\n\n${UserMessagePrefix}\n`;
+            let injectionPayload = `${systemInstructions}\n${dynamicContext}\n\n${UserMessagePrefix}\n`;
             let combinedLength = injectionPayload.length + originalUserMsg.length;
 
             // --- STEP 4: SAFETY CHECK & TRUNCATION ---
@@ -509,7 +503,7 @@
         document.removeEventListener("keydown", handleKeyDown, true);
       };
     }
-    return () => {}; // No-op cleanup function
+    return () => { }; // No-op cleanup function
   }
 
   // --- Script Initialization ---
@@ -526,11 +520,11 @@
   );
 
   // Initialize the safety guard
-  let cleanupSafetyGuard = () => {};
+  let cleanupSafetyGuard = () => { };
 
   // Create a button to trigger the export
   const exportButton = document.createElement("button");
-  exportButton.innerText = "Export Conversation (.md)";
+  exportButton.innerText = `Export Conversation (${extension})`;
   exportButton.style.cssText = `
         z-index: 9999;
         padding: 8px 12px;
@@ -547,7 +541,7 @@
 
   // Create a button to trigger the import
   const importButton = document.createElement("button");
-  importButton.innerText = "Import Conversation (.md)";
+  importButton.innerText = `Import Conversation (${extension})`;
   importButton.style.cssText = `
         padding: 8px 12px;
         background-color: #4285F4;

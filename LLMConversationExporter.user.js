@@ -7,6 +7,8 @@
 // @match        https://gemini.google.com/*
 // @match        https://chat.openai.com/*
 // @match        https://chatgpt.com/*
+// @downloadURL  https://raw.githubusercontent.com/sam-siddiqui/jerryscripts/refs/heads/master/LLMConversationExporter.user.js
+// @updateURL    https://raw.githubusercontent.com/sam-siddiqui/jerryscripts/refs/heads/master/LLMConversationExporter.user.js
 // @grant        none
 // ==/UserScript==
 
